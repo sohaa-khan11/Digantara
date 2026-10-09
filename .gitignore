@@ -1,0 +1,16 @@
+
+# Original assessment dataset — keep local
+/data/*.fits
+/data/**/*.fits
+/data/*.zip
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
