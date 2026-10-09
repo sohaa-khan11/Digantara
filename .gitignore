@@ -14,3 +14,7 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Generated tiles and analysis outputs
+/tiles/
+/output/
