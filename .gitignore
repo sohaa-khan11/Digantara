@@ -18,3 +18,15 @@ Thumbs.db
 # Generated tiles and analysis outputs
 /tiles/
 /output/
+
+# Generated tiles and analysis outputs
+/tiles/
+/output/
+
+# Generated annotation images and pilot outputs
+/annotation/images/
+/annotation/yolo_pilot/
+
+# Local annotation exports and generated manifests
+/annotation/cvat_export/
+/annotation/images_manifest.csv
