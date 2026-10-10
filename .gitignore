@@ -1,32 +1,42 @@
-
-# Original assessment dataset — keep local
+# Original FITS dataset and sensitive assessment documents — keep local
 /data/*.fits
 /data/**/*.fits
 /data/*.zip
+*.pdf
+Assessment*.pdf
 
-# Python generated files
+# Python environment and compilation caches
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 
-# Editor and operating system files
+# Editor and operating system metadata
 .vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# Generated tiles and analysis outputs
+# Generated raw binary tiles and heavy numerical caches
 /tiles/
+*.npy
+*.npz
+
+# Generated full-frame analysis outputs and inspection caches
 /output/
 
-# Generated tiles and analysis outputs
-/tiles/
-/output/
-
-# Generated annotation images and pilot outputs
+# Heavy local annotation PNG sets and private CVAT XML exports
 /annotation/images/
-/annotation/yolo_pilot/
-
-# Local annotation exports and generated manifests
+/annotation/cvat_validation_set/
 /annotation/cvat_export/
 /annotation/images_manifest.csv
+/annotation/pilot_masks/
+
+# Evidence videos (keep local; submit via ZIP package)
+/evidence/*.mp4
+/evidence/*.webm
+/evidence/*.mov
+
+# Reports and submission packages
+/report/*.pdf
+*.zip
