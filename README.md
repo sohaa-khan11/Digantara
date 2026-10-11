@@ -27,6 +27,8 @@ A modular Python framework for astronomical and Space Situational Awareness (SSA
 │   ├── convert_cvat_xml_to_yolo.py     # CVAT XML to YOLO segmentation converter
 │   ├── repatch_yolo_annotations.py     # Tile to full-frame (9568x6380) YOLO repatcher
 │   ├── detect_full_frame_candidates.py # Adaptive 2D candidate detector
+│   ├── run_automated_segmentation_pipeline.py # Dataset-wide automated segmentation & repatching
+│   ├── generate_contact_sheet.py       # Visual contact sheet inspection generator
 │   ├── compare_local_background.py     # Global vs 2D local background diagnostics
 │   ├── diagnose_dataset_detection.py   # Full-frame noise & component diagnostics
 │   ├── inspect_streak_candidates.py    # Exploratory streak candidate tool
@@ -80,22 +82,36 @@ Generate 8-bit contrast-stretched PNG images for annotation interfaces without m
 python src/prepare_annotation_images.py --tiles-dir tiles --manifest tiles/tiles_manifest.csv --output-dir annotation/images
 ```
 
-### 5. Convert CVAT XML to YOLO Segmentation
+### 5. Convert CVAT XML to YOLO Segmentation (Human Annotations)
 Convert exported CVAT polygon annotations to normalized YOLO segmentation format:
 ```bash
-python src/convert_cvat_xml_to_yolo.py --xml "annotation/cvat_export/annotations.xml" --images-dir "annotation/images" --output-dir "annotation/yolo_labels"
+# Example for validation set
+python src/convert_cvat_xml_to_yolo.py --xml "annotation/cvat_export/validation_10.xml" --images-dir "annotation/cvat_validation_set" --output-dir "annotation/yolo_validation/labels"
 ```
 
-### 6. Repatch Annotations to Full-Frame Coordinate Space
+### 6. Repatch Human Annotations to Full-Frame Coordinate Space
 Project tile-level normalized coordinates back into the original $9568 \times 6380$ sensor frame:
 ```bash
-python src/repatch_yolo_annotations.py --xml "annotation/cvat_export/annotations.xml" --manifest "tiles/tiles_manifest.csv" --output-dir "annotation/repatched_full_size" --data-dir "data"
+# Example for validation set
+python src/repatch_yolo_annotations.py --xml "annotation/cvat_export/validation_10.xml" --manifest "tiles/tiles_manifest.csv" --output-dir "annotation/repatched_full_size_validation" --data-dir "data"
 ```
 
 ### 7. Run Full-Frame Candidate Detection
-Scan full images for prospective point sources and linear tracks using adaptive 2D background modeling:
+Scan full images for prospective point sources and linear tracks using adaptive 2D background modeling ($4\sigma$, area $\ge 3$ px):
 ```bash
 python src/detect_full_frame_candidates.py --data-dir data --output-dir output/automated_candidates --k-sigma 4.0 --min-area 3
+```
+
+### 8. Run Dataset-Wide Automated Segmentation & Repatching
+Generate tile-level and full-frame repatched YOLO segmentation labels across all 700 tiles using calibrated SNR and geometry criteria:
+```bash
+python src/run_automated_segmentation_pipeline.py --tiles-manifest tiles/tiles_manifest.csv --candidate-catalog output/automated_candidates/all_10_images_candidate_catalog.csv --masks-dir output/automated_candidates/candidate_masks --output-tiles-dir annotation/automated_yolo_tiles --output-full-dir annotation/repatched_full_size_automated
+```
+
+### 9. Generate Visual Inspection Contact Sheet
+Render representative 16-panel grayscale comparison of raw FITS tiles against predicted/human polygon overlays:
+```bash
+python src/generate_contact_sheet.py
 ```
 
 ---
@@ -114,9 +130,13 @@ Dividing $9568 \times 6380$ into $1024 \times 1024$ tiles yields a $7 \text{ row
 * **Bottom Edge Tiles (Row 6):** Valid data occupies $y \in [0, 236]$; rows $[236, 1024]$ are zero-padded.
 * **Corner Tile (Row 6, Column 9):** Contains a $236 \times 352$ valid patch with dual-axis zero padding.
 
-### Class Definitions & YOLO Labels
-* **Class 0 (`blob_star`):** Symmetric stellar point sources satisfying aspect ratio $AR \le 1.4$ and principal elongation $\epsilon < 1.4$.
-* **Class 1 (`streak`):** Linear satellite or orbital debris trails with aspect ratio $AR \ge 1.8$ and regularized elongation $\epsilon \ge 1.8$.
+### Class Definitions & Classification Rules
+* **Class 0 (`blob_star`):** Symmetric stellar point sources.
+  - Candidate rule: $\text{area} \ge 5\text{ px}$, aspect ratio $AR \le 1.4$, moment elongation $\epsilon < 1.3$.
+  - Automated export filter: $\text{SNR} \ge 15.0$, $6 \le \text{area} \le 1500\text{ px}$.
+* **Class 1 (`streak`):** Linear satellite or orbital debris trails.
+  - Candidate rule: $(\text{length} \ge 8\text{ px} \land AR \ge 1.8 \land \epsilon \ge 1.8 \land \text{area} \ge 8\text{ px}) \lor (\text{length} \ge 5\text{ px} \land AR \ge 2.5)$.
+  - Automated export filter: $\text{SNR} \ge 10.0 \land (\text{length} \ge 6\text{ px} \lor \text{SNR} \ge 15.0)$.
 * **YOLO Ultralytics Segmentation Syntax:**
   ```
   <class_id> x1 y1 x2 y2 ... xn yn
@@ -128,8 +148,11 @@ Dividing $9568 \times 6380$ into $1024 \times 1024$ tiles yields a $7 \text{ row
 ## Validation & Known Limitations
 
 1. **Reconstruction Equality:** All 10 full-frame images reconstructed via `reconstruct_images.py` pass bit-for-bit exact equality (`np.array_equal`) against raw source data.
-2. **Label Provenance:** Algorithmic candidate proposals are strictly isolated from human-verified ground-truth labels. Unreviewed image areas are explicitly recorded in manifests and are not treated as verified negative background.
-3. **Discrete Quantization:** For frames where background levels are $\le 1.0\text{ ADU}$, single-pixel Poisson noise fluctuations reach discrete integer thresholds. An empirical minimum area floor ($\text{area} \ge 3\text{ px}$) is enforced to suppress spurious 1-pixel thermal noise while preserving unresolved optical point spread functions.
+2. **Label Provenance Separation:**
+   - **Human Verified:** 14 tiles across pilot (`annotation/yolo_pilot4/`, `annotation/repatched_full_size/`) and validation sets (`annotation/yolo_validation/`, `annotation/repatched_full_size_validation/`).
+   - **Automated Candidates:** 700 tiles in `annotation/automated_yolo_tiles/` and 10 full-frame files in `annotation/repatched_full_size_automated/`.
+   - Manifests explicitly flag provenance (`human_verified_cvat` vs. `automated_pipeline_candidate`). Unreviewed tiles with zero automated predictions are algorithmically empty, not confirmed negatives.
+3. **Discrete Quantization:** For frames where background levels are $\le 1.0\text{ ADU}$, single-pixel Poisson noise fluctuations reach discrete integer thresholds. An empirical minimum area floor ($\text{area} \ge 3\text{ px}$) is enforced during initial detection to suppress spurious 1-pixel thermal noise while preserving unresolved optical point spread functions.
 4. **Candidate Review Requirement:** Algorithmic candidate detections serve as a triage tool for human annotators; they are not confirmed celestial or orbital objects without human review.
 
 ---
@@ -140,4 +163,7 @@ To verify the pipeline on local data:
 1. Ensure raw FITS files are located in `data/`.
 2. Run the tiling command (`src/tile_images.py`).
 3. Run reconstruction verification (`src/reconstruct_images.py`) to confirm bit-exact preservation.
-4. Convert annotation exports using `src/convert_cvat_xml_to_yolo.py`.
+4. Convert human annotations using `src/convert_cvat_xml_to_yolo.py` and `src/repatch_yolo_annotations.py`.
+5. Execute full-frame candidate detection (`src/detect_full_frame_candidates.py`).
+6. Run the automated segmentation and repatching pipeline (`src/run_automated_segmentation_pipeline.py`).
+7. Generate visual inspection contact sheets (`src/generate_contact_sheet.py`).
